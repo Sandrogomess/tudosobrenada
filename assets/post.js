@@ -477,8 +477,11 @@
         '<ul>' +
           (related.length
             ? related.map(function (p) {
+                /* A contagem inclui as respostas: um comentário com 10
+                   respostas são 11 comentários. */
+                var total = U.countComments(p);
                 return '<li><a href="post.html?id=' + encodeURIComponent(p.id) + '"><b>' + U.escape(p.title) + '</b>' +
-                  '<small>' + scoreOf(p) + ' pontos · ' + (p.comments || []).length + ' comentários</small></a></li>';
+                  '<small>' + scoreOf(p) + ' pontos · ' + total + (total === 1 ? ' comentário' : ' comentários') + '</small></a></li>';
               }).join('')
             : '<li><a href="index.html?board=' + U.escape(board.id) + '"><b>Ver o board completo</b><small>' + U.escape(board.desc || '') + '</small></a></li>') +
         '</ul>' +

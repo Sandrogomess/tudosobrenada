@@ -5,13 +5,16 @@
 
   /* Cada board tem um ícone próprio, ligado à função dele:
      geral = bússola, foto = câmera, vídeo = filmadora,
-     tutoriais = caderno, áudio = microfone. */
+     tutoriais = caderno, áudio = microfone,
+     ciências = béquer, games = controle. */
   var BOARDS = [
     { id: 'geral', name: 'Geral', color: '#FF5E5B', icon: 'geral', desc: 'Conversa solta sobre o que você está fazendo.' },
     { id: 'foto', name: 'Fotografia', color: '#FFB23F', icon: 'foto', desc: 'Fotos, luz, cor e o que deu errado na hora.' },
     { id: 'video', name: 'Vídeo', color: '#FF8A3D', icon: 'video', desc: 'Clipes, cortes, roteiros e sets.' },
     { id: 'tutoriais', name: 'Tutoriais', color: '#6FE3B0', icon: 'tutoriais', desc: 'Passo a passo testado, com ferramentas e nível.' },
-    { id: 'audio', name: 'Áudio', color: '#C49BFF', icon: 'audio', desc: 'Gravação, mix, truques de captação.' }
+    { id: 'audio', name: 'Áudio', color: '#C49BFF', icon: 'audio', desc: 'Gravação, mix, truques de captação.' },
+    { id: 'ciencias', name: 'Ciências', color: '#7FC8FF', icon: 'ciencias', desc: 'Experimentos, física, química, biologia e o universo.' },
+    { id: 'games', name: 'Games', color: '#FF9EC7', icon: 'games', desc: 'Jogos, reviews, setup, performance e spoilers.' }
   ];
 
   var USERS = [

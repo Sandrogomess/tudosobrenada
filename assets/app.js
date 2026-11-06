@@ -330,6 +330,12 @@
       : '';
     var bottomActions = '';
 
+    /* O resumo do post: no modo lista fica acima da capa, no modo grade
+       fica embaixo (a imagem é o que chama o olho primeiro). */
+    var excerpt = post.body ? '<p class="post__excerpt">' + U.escape(post.body.split('\n')[0]) + '</p>' : '';
+    var media = mediaHTML(post);
+    var resumoEMidia = view.mode === 'grid' ? media + excerpt : excerpt + media;
+
     return '' +
       '<article class="post" data-id="' + U.escape(post.id) + '">' +
         '<div class="post__vote">' +
@@ -347,8 +353,7 @@
               U.escape(U.dateBR(post.createdAt)) + '</time>' +
           '</div>' +
           '<h3 class="post__title"><button data-action="open" data-id="' + U.escape(post.id) + '">' + U.escape(post.title) + '</button></h3>' +
-          (post.body ? '<p class="post__excerpt">' + U.escape(post.body.split('\n')[0]) + '</p>' : '') +
-          mediaHTML(post) +
+          resumoEMidia +
           '<div class="post__foot">' +
             tags +
             '<button class="act" data-action="open-comments" data-id="' + U.escape(post.id) + '">' + icon('i-comment') + commentCount(post) + (commentCount(post) === 1 ? ' comentário' : ' comentários') + '</button>' +
