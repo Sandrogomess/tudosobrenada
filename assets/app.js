@@ -17,19 +17,9 @@
     spotlight: document.getElementById('spotlight'),
     search: document.getElementById('searchInput'),
     toast: document.getElementById('toast'),
-    composer: document.getElementById('composerDialog'),
-    composerForm: document.getElementById('composerForm'),
     railLeft: document.getElementById('leftRail'),
     navScrim: document.getElementById('navScrim'),
-    mediaList: document.getElementById('mediaList'),
-    dropzone: document.getElementById('dropzone'),
-    fileInput: document.getElementById('fMedia'),
-    formError: document.getElementById('formError'),
-    fTitle: document.getElementById('fTitle'),
-    fBody: document.getElementById('fBody'),
-    fBoard: document.getElementById('fBoard'),
-    fTags: document.getElementById('fTags'),
-    fLink: document.getElementById('fLink'),    navButton: document.getElementById('openNav')
+    navButton: document.getElementById('openNav')
   };
 
   var view = {
@@ -40,8 +30,8 @@
     /* Perfil aberto: quando tem valor, o feed mostra so os posts dele. */
     author: null,
     mode: 'feed',
-    pendingMedia: [],
-    slides: [],
+    /* Post aberto para edicao pela URL (?edit=id). */
+    editId: null,
     postsPerPage: 10,
     currentPage: 1
   };
@@ -297,18 +287,6 @@
       ? ' src="' + m.poster + '"'
       : (m.id ? ' data-media-id="' + U.escape(m.id) + '"' : '');
     return '<figure class="post__media"><img alt="Mídia do post: ' + U.escape(post.title) + '"' + srcAttr + '></figure>';
-  }
-
-  /* Gera um frame do vídeo para usar como thumbnail.
-     O primeiro frame de quase todo vídeo é preto, então o módulo de
-     posters procura um frame logo no começo que tenha imagem de verdade. */
-  function makeVideoPoster(file) {
-    if (!Beam.poster) return Promise.resolve(null);
-    return Beam.poster.frame(file).then(function (blob) {
-      return blob || null;
-    }).catch(function () {
-      return null;
-    });
   }
 
   function cardHTML(post) {
@@ -686,432 +664,16 @@
     toast(index === -1 ? 'Post salvo nos favoritos.' : 'Post removido dos favoritos.');
   }
 
+  /* ---------------- compositor ----------------
+     Publicar e editar vivem em assets/composer.js: a pagina do post usa
+     o mesmo editor sem precisar voltar para o feed. */
+
   function openComposer() {
-    /* Sem perfil não dá para publicar: o caminho é criar o perfil. */
-    if (isGuest()) {
-      Beam.profile.openProfilesDialog('create');
-      toast('Crie um perfil para publicar.', true);
-      return;
-    }
-    resetComposer();
-    el.composer.showModal();
-    setTimeout(function () { el.fTitle.focus(); }, 60);
-  }
-
-  function resetComposer() {
-    el.composerForm.reset();
-    el.formError.hidden = true;
-    el.formError.textContent = '';
-    view.pendingMedia = [];
-    el.mediaList.innerHTML = '';
-    view.slides = [{ id: Beam.util.uid('slide'), body: '', media: null }];
-    updateTitleHint();
-    renderSlidesList();
-    renderLinks([]);
-  }
-
-  /* ---------------- links de apoio ---------------- */
-
-  function linksContainer() {
-    return document.querySelector('#linkField .links-editor');
-  }
-
-  function linkRowHTML(value, label) {
-    var preview = label ? '<span class="links-editor__badge">' + U.escape(label) + '</span>' : '';
-    return '<div class="links-editor__row">' +
-      '<input type="url" name="links" placeholder="https://youtube.com/watch?v=..." value="' + U.escape(value || '') + '" data-link-input>' +
-      preview +
-      '<button type="button" class="act act--danger" data-action="remove-link" aria-label="Remover link">' +
-      '<svg class="icon"><use href="#i-trash"/></svg></button>' +
-      '</div>';
-  }
-
-  function renderLinks(items) {
-    var box = linksContainer();
-    if (!box) return;
-    if (!items.length) items = [{ url: '', label: '' }];
-    box.innerHTML = items.map(function (it) { return linkRowHTML(it.url, it.label); }).join('');
-  }
-
-  function collectLinks() {
-    var rows = document.querySelectorAll('#linkField [data-link-input]');
-    var out = [];
-    for (var i = 0; i < rows.length; i++) {
-      var url = rows[i].value.trim();
-      if (!url) continue;
-      out.push({ url: url, label: U.linkName(url) });
-    }
-    return out;
-  }
-
-  function updateLinkLabels() {
-    var rows = document.querySelectorAll('#linkField [data-link-input]');
-    for (var i = 0; i < rows.length; i++) {
-      var row = rows[i].closest('.links-editor__row');
-      if (!row) continue;
-      var badge = row.querySelector('.links-editor__badge');
-      var url = rows[i].value.trim();
-      if (!url) {
-        if (badge) badge.remove();
-        continue;
-      }
-      var label = U.linkName(url);
-      if (!badge) {
-        badge = document.createElement('span');
-        badge.className = 'links-editor__badge';
-        row.insertBefore(badge, row.querySelector('[data-action="remove-link"]'));
-      }
-      badge.textContent = label;
-    }
-  }
-
-  function updateTitleHint() {
-    var hint = el.composerForm.querySelector('[data-hint="title"]');
-    if (hint) hint.textContent = el.fTitle.value.length + '/140';
-  }
-
-  /* Confere se o endereço do arquivo ainda entrega o conteúdo. */
-  function probeFile(url, type) {
-    return new Promise(function (resolve) {
-      if (!url) return resolve(false);
-      var node = document.createElement(type === 'video' ? 'video' : 'img');
-      var done = false;
-      var finish = function (ok) {
-        if (done) return;
-        done = true;
-        resolve(ok);
-      };
-      node.addEventListener('load', function () { finish(true); });
-      node.addEventListener('error', function () { finish(false); });
-      setTimeout(function () { finish(false); }, 8000);
-      node.src = url;
-      if (type === 'video') node.load();
-    });
-  }
-
-  function addFiles(files) {
-    var list = Array.prototype.slice.call(files || []);
-    if (!list.length) return;
-    var accepted = 0;
-    list.forEach(function (file) {
-      if (!/^(image|video)\//.test(file.type)) {
-        toast('Arquivo ignorado (tipo não suportado): ' + file.name, true);
-        return;
-      }
-      if (file.size > S.MAX_FILE) {
-        toast('Arquivo maior que 25 MB: ' + file.name, true);
-        return;
-      }
-      accepted++;
-      S.addMedia(file).then(function (descriptor) {
-        descriptor.preview = URL.createObjectURL(file);
-        /* A capa antiga não existe mais: o arquivo novo ocupa o lugar
-           (é assim que o post se conserta). */
-        if (view.pendingMedia[0] && view.pendingMedia[0].dead) {
-          var velho = view.pendingMedia.shift();
-          if (velho && velho.id) S.removeMedia(velho.id);
-        }
-        view.pendingMedia.push(descriptor);
-        renderMediaList();
-        if (descriptor.type === 'video') {
-          /* A miniatura leva alguns segundos: o video é aberto e o
-             compositor procura um frame no começo que não seja preto. */
-          descriptor.posterBusy = true;
-          renderMediaList();
-          makeVideoPoster(file).then(function (blob) {
-            descriptor.posterBusy = false;
-            if (!blob) {
-              renderMediaList();
-              return;
-            }
-            var posterFile = new File([blob], 'poster.jpg', { type: 'image/jpeg' });
-            S.addMedia(posterFile).then(function (pd) {
-              descriptor.posterId = pd.id;
-              descriptor.posterPreview = URL.createObjectURL(blob);
-              /* A url da miniatura viaja com o post: é ela que os outros
-                 visitantes conseguem abrir. */
-              if (pd.url) descriptor.posterUrl = pd.url;
-              if (pd.path) descriptor.posterPath = pd.path;
-              renderMediaList();
-            }).catch(function () { renderMediaList(); });
-          });
-        }
-      }).catch(function (err) {
-        toast(err.message || 'Não foi possível ler o arquivo.', true);
-      });
-    });
-    if (accepted) toast(accepted + (accepted === 1 ? ' arquivo adicionado.' : ' arquivos adicionados.'));
-  }
-
-  function renderMediaList() {
-    el.mediaList.innerHTML = view.pendingMedia.map(function (m, i) {
-      var thumb = m.dead
-        ? '<span class="thumb thumb--busy" style="display:grid;place-items:center">' +
-          icon('i-image') + '<em>sem arquivo</em></span>'
-        : (m.type === 'image'
-          ? '<img class="thumb" alt="" src="' + m.preview + '">'
-          : (m.posterPreview
-            ? '<img class="thumb" alt="" src="' + m.posterPreview + '">'
-            : '<span class="thumb thumb--busy" style="display:grid;place-items:center">' +
-              icon('i-video') + (m.posterBusy ? '<em>gerando…</em>' : '') + '</span>'));
-      return '<li>' + thumb +
-        '<span style="flex:1;min-width:0"><span class="name">' + U.escape(m.name) + '</span>' +
-        '<span class="size">' + U.bytes(m.size) + '</span></span>' +
-        '<button type="button" class="act act--danger" data-action="remove-media" data-index="' + i + '" aria-label="Remover ' + U.escape(m.name) + '">' + icon('i-trash') + '</button>' +
-        '</li>';
-    }).join('');
-  }
-
-  function renderSlidesList() {
-    var list = document.getElementById('slidesList');
-    var count = document.getElementById('slidesCount');
-    if (!list) return;
-    var last = view.slides.length - 1;
-    list.innerHTML = view.slides.map(function (s, i) {
-      var preview = s.media && s.media.preview
-        ? '<img alt="Imagem do slide" src="' + s.media.preview + '">'
-        : '';
-      return '<div class="slide-card" data-slide-id="' + s.id + '">' +
-        '<div class="slide-card__bar">' +
-          '<span class="slide__num">' + (i + 1) + '</span>' +
-          '<span class="slide__drag" draggable="true" title="Arraste para reordenar" aria-label="Arraste para mover o slide">⠿</span>' +
-          '<span class="slide-card__spacer"></span>' +
-          '<button type="button" class="slide__move" data-action="move-slide-up" data-slide-id="' + s.id + '" aria-label="Mover slide para cima"' + (i === 0 ? ' disabled' : '') + '>↑</button>' +
-          '<button type="button" class="slide__move" data-action="move-slide-down" data-slide-id="' + s.id + '" aria-label="Mover slide para baixo"' + (i === last ? ' disabled' : '') + '>↓</button>' +
-          '<button type="button" class="slide__remove" data-action="remove-slide" data-slide-id="' + s.id + '" aria-label="Remover slide">×</button>' +
-        '</div>' +
-        '<label class="slide__media">' +
-          '<input type="file" class="slide__input" accept="image/*" data-slide-id="' + s.id + '" hidden>' +
-          '<svg class="icon"><use href="#i-image"/></svg>' +
-          '<span class="slide__label">Adicionar imagem deste slide</span>' +
-          '<span class="slide__hint">opcional · até 25 MB</span>' +
-        '</label>' +
-        '<div class="slide__preview" id="slidePreview-' + s.id + '">' + preview + '</div>' +
-        '<label class="field field--inner slide__text">' +
-          '<span class="field__label">Texto do slide</span>' +
-          '<textarea name="slideBody-' + s.id + '" rows="4" placeholder="Conte esta parte do passo a passo.">' + U.escape(s.body) + '</textarea>' +
-        '</label>' +
-      '</div>';
-    }).join('');
-    if (count) count.textContent = view.slides.length + (view.slides.length === 1 ? ' slide' : ' slides');
-  }
-
-  /* Le os textos digitados antes de reordenar, para o texto viajar com o slide. */
-  function syncSlidesFromDom() {
-    var textareas = document.querySelectorAll('#slidesList textarea[name^="slideBody-"]');
-    for (var i = 0; i < textareas.length; i++) {
-      var id = textareas[i].name.replace('slideBody-', '');
-      var slide = view.slides.find(function (s) { return s.id === id; });
-      if (slide) slide.body = textareas[i].value;
-    }
-  }
-
-  /* Move um slide (com imagem e texto) para outra posicao. */
-  function moveSlide(id, targetIndex) {
-    syncSlidesFromDom();
-    var from = view.slides.findIndex(function (s) { return s.id === id; });
-    if (from === -1) return;
-    var to = Math.max(0, Math.min(view.slides.length - 1, targetIndex));
-    if (to === from) return;
-    var slide = view.slides.splice(from, 1)[0];
-    view.slides.splice(to, 0, slide);
-    renderSlidesList();
-    var field = document.querySelector('textarea[name="slideBody-' + id + '"]');
-    if (field) field.focus();
-  }
-
-  function addSlideFile(file, slideId) {
-    if (!/^image\//.test(file.type)) {
-      toast('Apenas imagens são aceitas nos slides.', true);
-      return;
-    }
-    if (file.size > S.MAX_FILE) {
-      toast('Imagem maior que 25 MB.', true);
-      return;
-    }
-    S.addMedia(file).then(function (descriptor) {
-      descriptor.preview = URL.createObjectURL(file);
-      var slide = view.slides.find(function (s) { return s.id === slideId; });
-      if (slide) slide.media = descriptor;
-      renderSlidesList();
-    }).catch(function (err) {
-      toast(err.message || 'Não foi possível ler a imagem.', true);
-    });
+    Beam.composer.open();
   }
 
   function editPost(id) {
-    var post = findPost(id);
-    if (!post) return;
-
-    view.editingPostId = id;
-
-    el.fTitle.value = post.title;
-    el.fTitle.dispatchEvent(new Event('input', {bubbles:true}));
-    el.fBody.value = post.body;
-    el.fBoard.value = post.board;
-    el.fTags.value = (post.tags || []).join(', ');
-
-    // Links de apoio - aceita formato novo (array) e legado (string)
-    var existingLinks = [];
-    if (Array.isArray(post.links)) {
-      existingLinks = post.links.map(function (l) {
-        return { url: l.url || '', label: l.label || U.linkName(l.url || '') };
-      });
-    } else if (post.link) {
-      existingLinks = [{ url: post.link, label: U.linkName(post.link) }];
-    }
-    renderLinks(existingLinks);
-
-    // Slides - carregar pré-visualização das imagens
-    var slidePromises = (post.slides || []).map(function (s) {
-      return new Promise(function (resolve) {
-        var slide = { id: s.id || Beam.util.uid('slide'), body: s.body || '', media: s.media || null };
-        if (slide.media && slide.media.id) {
-          S.mediaURL(slide.media.id).then(function (url) {
-            slide.media.preview = url;
-            resolve(slide);
-          });
-        } else {
-          resolve(slide);
-        }
-      });
-    });
-    Promise.all(slidePromises).then(function (slidesList) {
-      view.slides = slidesList;
-      renderSlidesList();
-    });
-
-    // Mídia de capa - carregar pré-visualização do IndexedDB
-    var pendingMediaPromises = (post.media || []).map(function (m) {
-      return S.mediaURL(m.id).then(function (url) {
-        var entry = { id: m.id, type: m.type, name: m.name, size: m.size, preview: url };
-        /* Guarda o endereço do arquivo no Storage: ao republicar, o post
-           continua apontando para o mesmo lugar. */
-        if (m.url) entry.url = m.url;
-        if (m.path) entry.path = m.path;
-        if (m.posterUrl) entry.posterUrl = m.posterUrl;
-        if (m.posterPath) entry.posterPath = m.posterPath;
-
-        /* O arquivo pode ter sumido do Storage. A cópia local é a prova
-           de que ele ainda existe; sem ela, o endereço é testado. */
-        var check = S.localMediaURL(m.id).then(function (localUrl) {
-          if (localUrl) {
-            entry.preview = localUrl;
-            return entry;
-          }
-          return probeFile(url, m.type).then(function (ok) {
-            if (!ok) entry.dead = true;
-            return entry;
-          });
-        });
-
-        if (m.posterId) {
-          entry.posterId = m.posterId;
-          return S.mediaURL(m.posterId).then(function (posterUrl) {
-            entry.posterPreview = posterUrl;
-            return check;
-          });
-        }
-        return check;
-      });
-    });
-    Promise.all(pendingMediaPromises).then(function (mediaList) {
-      var mortos = mediaList.filter(function (m) { return m.dead; }).length;
-      if (mortos) {
-        toast('A mídia deste post não está mais disponível: anexe o arquivo de novo.', true);
-      }
-      view.pendingMedia = mediaList;
-      renderMediaList();
-    });
-
-    el.composer.showModal();
-    setTimeout(function () { el.fTitle.focus(); }, 60);
-  }
-
-  function publish() {
-    var title = el.fTitle.value.trim();
-    var body = el.fBody.value.trim();
-    var board = el.fBoard.value;
-
-    /* Sem perfil não há publicação: é preciso criar o perfil primeiro. */
-    if (isGuest()) {
-      el.composer.close();
-      Beam.profile.openProfilesDialog('create');
-      toast('Crie um perfil para publicar.', true);
-      return;
-    }
-
-    if (!title) {
-      el.formError.textContent = 'Dê um título ao post — é o que as pessoas veem primeiro.';
-      el.formError.hidden = false;
-      el.fTitle.focus();
-      return;
-    }
-
-    var tags = el.fTags.value.split(',')
-      .map(function (t) { return t.trim().toLowerCase().replace(/\s+/g, '-'); })
-      .filter(Boolean).slice(0, 5);
-
-    var post = {
-      id: view.editingPostId || U.uid('post'),
-      board: board,
-      author: view.editingPostId ? (findPost(view.editingPostId) && findPost(view.editingPostId).author) || currentProfile().id : currentProfile().id,
-      title: title,
-      body: body,
-      tags: tags,
-      /* Post novo começa sem votos: o "+1" automatico inflava a pontuacao. */
-      /* A pontuação vem dos votos (tabela votes). O campo antigo do post
-         guardava o "+1" automático: ele não entra mais na conta. */
-      votes: 0,
-      createdAt: view.editingPostId ? (findPost(view.editingPostId) && findPost(view.editingPostId).createdAt || Date.now()) : Date.now(),
-      /* A url do arquivo precisa ir junto: sem ela, quem abre o post de
-         outro navegador ve a imagem quebrada. */
-      media: view.pendingMedia.map(function (m) {
-        var entry = { id: m.id, type: m.type, name: m.name, size: m.size };
-        /* Midia que ja nao existe: nao viaja o endereco morto. */
-        if (!m.dead) {
-          if (m.url) entry.url = m.url;
-          if (m.path) entry.path = m.path;
-          if (m.posterUrl) entry.posterUrl = m.posterUrl;
-          if (m.posterPath) entry.posterPath = m.posterPath;
-        }
-        if (m.posterId) entry.posterId = m.posterId;
-        return entry;
-      }),
-      /* Slide em branco (sem imagem e sem texto) nao e salvo. */
-      slides: view.slides.filter(function (s) {
-        return (s.media && s.media.id) || (s.body && String(s.body).trim());
-      }).map(function (s) {
-        var entry = null;
-        if (s.media) {
-          entry = { id: s.media.id, type: s.media.type, name: s.media.name, size: s.media.size };
-          if (s.media.url) entry.url = s.media.url;
-          if (s.media.path) entry.path = s.media.path;
-        }
-        return { body: s.body || '', media: entry };
-      }),
-      comments: view.editingPostId ? (findPost(view.editingPostId) && findPost(view.editingPostId).comments || []) : []
-    };
-    var links = collectLinks();
-    if (links.length) post.links = links;
-
-    if (view.editingPostId) {
-      // Atualizar post existente
-      S.state.posts = S.state.posts.map(function (p) {
-        return p.id === post.id ? post : p;
-      });
-      toast('Post atualizado.');
-    } else {
-      S.state.posts.unshift(post);
-      toast('Publicado.');
-    }
-    S.save();
-    /* Envia para o banco compartilhado: é o que faz todo mundo ver o post. */
-    S.syncPost(post);
-    el.composer.close();
-    view.editingPostId = null;
-    renderYouNav();
-    setTimeout(function () { openPost(post.id); }, 350);
+    Beam.composer.edit(id);
   }
 
   function deletePost(id) {
@@ -1201,61 +763,6 @@
     }
     else if (action === 'play') {
       toast('Este post usa um arquivo de exemplo: o vídeo original não está no repositório.');
-    }
-    else if (action === 'remove-media') {
-      var index = Number(target.getAttribute('data-index'));
-      var removed = view.pendingMedia.splice(index, 1)[0];
-      if (removed) {
-        S.removeMedia(removed.id);
-        if (removed.posterId) S.removeMedia(removed.posterId);
-      }
-      renderMediaList();
-    }
-    else if (action === 'add-link') {
-      var box = linksContainer();
-      if (!box) return;
-      var row = document.createElement('div');
-      row.className = 'links-editor__row';
-      row.innerHTML = linkRowHTML('', '');
-      box.appendChild(row);
-      var input = row.querySelector('[data-link-input]');
-      if (input) input.focus();
-    }
-    else if (action === 'remove-link') {
-      var linkRow = target.closest('.links-editor__row');
-      var linkBox = linksContainer();
-      if (!linkRow || !linkBox) return;
-      var rows = linkBox.querySelectorAll('.links-editor__row');
-      if (rows.length > 1) {
-        linkRow.remove();
-      } else {
-        var only = linkRow.querySelector('[data-link-input]');
-        if (only) only.value = '';
-        var badge = linkRow.querySelector('.links-editor__badge');
-        if (badge) badge.remove();
-      }
-    }
-    else if (action === 'add-slide') {
-      view.slides.push({ id: Beam.util.uid('slide'), body: '', media: null });
-      renderSlidesList();
-    }
-    else if (action === 'remove-slide') {
-      var slideId = target.getAttribute('data-slide-id');
-      var slideIndex = view.slides.findIndex(function (s) { return s.id === slideId; });
-      if (slideIndex === -1) return;
-      var removed = view.slides.splice(slideIndex, 1)[0];
-      if (removed && removed.media) S.removeMedia(removed.media.id);
-      renderSlidesList();
-    }
-    else if (action === 'move-slide-up') {
-      var upId = target.getAttribute('data-slide-id');
-      var upIndex = view.slides.findIndex(function (s) { return s.id === upId; });
-      if (upIndex > 0) moveSlide(upId, upIndex - 1);
-    }
-    else if (action === 'move-slide-down') {
-      var downId = target.getAttribute('data-slide-id');
-      var downIndex = view.slides.findIndex(function (s) { return s.id === downId; });
-      if (downIndex !== -1 && downIndex < view.slides.length - 1) moveSlide(downId, downIndex + 1);
     }
     else if (action === 'pagination-prev') {
       var page = Number(target.getAttribute('data-page'));
@@ -1417,121 +924,6 @@
     el.search.value = '';
     renderBoards(); renderFeed(); syncURL();
   });
-  document.querySelector('[data-close-composer]').addEventListener('click', function () { el.composer.close(); });
-
-  document.getElementById('addSlide').addEventListener('click', function () {
-    view.slides.push({ id: Beam.util.uid('slide'), body: '', media: null });
-    renderSlidesList();
-  });
-
-  document.getElementById('slidesList').addEventListener('change', function (event) {
-    var input = event.target;
-    if (!input.classList.contains('slide__input')) return;
-    var slideId = input.getAttribute('data-slide-id');
-    addSlideFile(input.files[0], slideId);
-    input.value = '';
-  });
-
-  document.getElementById('slidesList').addEventListener('input', function (event) {
-    var textarea = event.target;
-    if (!textarea.name || !textarea.name.startsWith('slideBody-')) return;
-    var slideId = textarea.name.replace('slideBody-', '');
-    var slide = view.slides.find(function (s) { return s.id === slideId; });
-    if (slide) slide.body = textarea.value;
-  });
-
-  /* ---------- arrastar slides para reordenar ---------- */
-
-  var dragSlideId = null;
-
-  function slideCardFrom(node) {
-    return node && node.closest ? node.closest('.slide-card') : null;
-  }
-
-  document.getElementById('slidesList').addEventListener('dragstart', function (event) {
-    var handle = event.target.closest('.slide__drag');
-    if (!handle) return;
-    var card = slideCardFrom(handle);
-    if (!card) return;
-    dragSlideId = card.getAttribute('data-slide-id');
-    card.classList.add('is-dragging');
-    if (event.dataTransfer) {
-      event.dataTransfer.effectAllowed = 'move';
-      event.dataTransfer.setData('text/plain', dragSlideId);
-      try { event.dataTransfer.setDragImage(card, 24, 24); } catch (err) { }
-    }
-  });
-
-  document.getElementById('slidesList').addEventListener('dragend', function () {
-    Array.prototype.forEach.call(document.querySelectorAll('.slide-card'), function (el) {
-      el.classList.remove('is-dragging');
-      el.classList.remove('is-over');
-    });
-    dragSlideId = null;
-  });
-
-  document.getElementById('slidesList').addEventListener('dragover', function (event) {
-    if (!dragSlideId) return;
-    event.preventDefault();
-    if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
-    var card = slideCardFrom(event.target);
-    Array.prototype.forEach.call(document.querySelectorAll('.slide-card.is-over'), function (el) {
-      el.classList.remove('is-over');
-    });
-    if (card && card.getAttribute('data-slide-id') !== dragSlideId) card.classList.add('is-over');
-  });
-
-  document.getElementById('slidesList').addEventListener('drop', function (event) {
-    if (!dragSlideId) return;
-    event.preventDefault();
-    var card = slideCardFrom(event.target);
-    var fromId = dragSlideId;
-    if (!card) return;
-    var toId = card.getAttribute('data-slide-id');
-    if (!toId || toId === fromId) return;
-
-    var from = view.slides.findIndex(function (s) { return s.id === fromId; });
-    var to = view.slides.findIndex(function (s) { return s.id === toId; });
-    if (from === -1 || to === -1) return;
-    moveSlide(fromId, to);
-    toast('Slide movido para a posição ' + (to + 1) + '.');
-  });
-
-  el.fTitle.addEventListener('input', updateTitleHint);
-  el.fileInput.addEventListener('change', function () {
-    addFiles(el.fileInput.files);
-    el.fileInput.value = '';
-  });
-
-  ['dragenter', 'dragover'].forEach(function (evt) {
-    el.dropzone.addEventListener(evt, function (e) {
-      e.preventDefault();
-      el.dropzone.classList.add('is-over');
-    });
-  });
-  ['dragleave', 'drop'].forEach(function (evt) {
-    el.dropzone.addEventListener(evt, function (e) {
-      e.preventDefault();
-      el.dropzone.classList.remove('is-over');
-    });
-  });
-  el.dropzone.addEventListener('drop', function (e) {
-    if (e.dataTransfer && e.dataTransfer.files) addFiles(e.dataTransfer.files);
-  });
-
-  el.composerForm.addEventListener('submit', function (event) {
-    event.preventDefault();
-    publish();
-  });
-
-  el.composerForm.addEventListener('input', function (event) {
-    if (event.target.matches('[data-link-input]')) updateLinkLabels();
-  });
-
-  el.composerForm.addEventListener('change', function (event) {
-    if (event.target.matches('[data-link-input]')) updateLinkLabels();
-  });
-
   /* tema */
 
   function applyTheme(theme) {
@@ -1595,7 +987,7 @@
       el.search.focus();
       el.search.select();
     }
-    if (event.key === 'n' && !typing && !event.ctrlKey && !event.metaKey && !el.composer.open) {
+    if (event.key === 'n' && !typing && !event.ctrlKey && !event.metaKey && !Beam.composer.isOpen()) {
       event.preventDefault();
       openComposer();
     }
@@ -1615,7 +1007,7 @@
       view.board = board;
     }
     var editId = params.get('edit');
-    if (editId) { view.editingPostId = editId; }
+    if (editId) { view.editId = editId; }
     return params.get('compose') === '1';
   }
 
@@ -1627,10 +1019,6 @@
 
     /* O scroll nativo do navegador sobrescreveria a posicao restaurada. */
     if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
-
-    el.fBoard.innerHTML = Beam.boards.map(function (b) {
-      return '<option value="' + b.id + '">' + U.escape(b.name) + '</option>';
-    }).join('');
 
     /* Onde o usuario estava no feed antes de abrir um post. */
     var memory = restoreFeedMemory();
@@ -1669,7 +1057,7 @@
     }
 
     if (compose) setTimeout(openComposer, 180);
-    if (view.editingPostId) setTimeout(function () { editPost(view.editingPostId); }, 180);
+    if (view.editId) setTimeout(function () { editPost(view.editId); }, 180);
   }
 
   /* Outra aba publicou ou excluiu algo: redesenha o feed. */
@@ -1697,6 +1085,16 @@
     renderYouNav();
     renderBoards();
     renderFeed();
+  });
+
+  /* O compositor publicou ou salvou um post: o feed se atualiza e o
+     post recem-publicado aparece na sua propria pagina. */
+  window.addEventListener('beam:post-saved', function (event) {
+    var post = event.detail && event.detail.post;
+    renderYouNav();
+    renderBoards();
+    renderFeed();
+    if (post) setTimeout(function () { openPost(post.id); }, 350);
   });
 
   /* Ao rolar, novos cards de vídeo entram na tela: confere se algum

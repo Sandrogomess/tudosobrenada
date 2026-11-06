@@ -683,7 +683,7 @@
     else if (action === 'create-profile') { Beam.profile.openProfilesDialog(); }
     else if (action === 'share') { share(); }
     else if (action === 'delete-post') { deletePost(); }
-    else if (action === 'edit-post') { Beam.profile.navigateTo('index.html?edit=' + encodeURIComponent(postId)); }
+    else if (action === 'edit-post') { Beam.composer.edit(postId); }
     else if (action === 'play') {
       var video = document.querySelector('.post__video');
       if (video && video.src) {
@@ -915,6 +915,15 @@
 
   /* O banco compartilhado devolveu conteúdo novo: redesenha o post. */
   window.addEventListener('beam:remote-changed', function () {
+    render();
+  });
+
+  /* O post foi editado pelo compositor que abriu nesta pagina:
+     a pagina se redesenha sem trocar de lugar. */
+  window.addEventListener('beam:post-saved', function (event) {
+    var saved = event.detail && event.detail.post;
+    /* Editou outro post? A pagina continua mostrando o que estava aberto. */
+    if (saved && postId && saved.id !== postId) return;
     render();
   });
 })();
