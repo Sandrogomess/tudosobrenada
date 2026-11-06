@@ -21,6 +21,7 @@ beam-community/
 │  ├─ store.js         # persistência: localStorage + IndexedDB (mídia) + banco
 │  ├─ poster.js        # miniaturas de vídeo: frame do começo, nunca preto
 │  ├─ profile.js       # perfis, paletas, menu, masthead e transições
+│  ├─ composer.js      # compositor de posts (publicar/editar), compartilhado
 │  ├─ app.js           # página inicial: feed, filtros, navegação
 │  └─ post.js          # página do post: votos, comentários, respostas
 ├─ tools/
@@ -291,10 +292,17 @@ publicar o `beam-community/` como está.
 - **Página inicial** (`index.html`): feed com ordenação (*Em alta*, *Novos*,
   *Mais comentados*), visualização em lista ou grade, busca ao vivo, filtro por board
   e por tag.
+  - No modo **lista** o resumo do post fica entre o título e a capa; no modo
+    **grade** a capa vem primeiro e o resumo aparece **logo abaixo dela**
+    (a imagem é o que chama o olho primeiro). A troca é feita no JS, em
+    `cardHTML` (`assets/app.js`), pelo modo de visualização ativo.
 - **Página do post** (`post.html?id=<id>`): cada post é uma página própria, com URL
   compartilhável — clicar no título navega, não abre popup. Traz mídia, texto completo,
   especificações de tutorial, votos, salvar, copiar link, comentários com resposta e
   uma lista de posts relacionados ao final.
+  - O bloco **"Mais em <board>"** no fim da página conta os comentários
+    **incluindo as respostas**: um comentário com 10 respostas aparece como
+    11 comentários (e não 1).
 - **Barra lateral recolhível**: boards (sempre visíveis) + um bloco **Tags** que começa
   recolhido e, ao ser aberto, lista as tags em **ordem alfabética**. O botão no canto
   superior esquerdo recolhe a barra inteira — no desktop o padrão é recolhido, no
@@ -303,6 +311,11 @@ publicar o `beam-community/` como está.
 ## O que já funciona
 
 - **Publicar** com 4 tipos: imagem, vídeo, tutorial e texto.
+  - O compositor (`assets/composer.js`) é **compartilhado** entre o feed e a
+    página do post: o botão **Editar post** abre o editor **na própria página**,
+    sem voltar para a tela inicial. O diálogo é montado por JS (fonte única
+    para as duas páginas).
+  - No editor, a **mídia de capa aparece logo abaixo do título**.
   - **Tutorial com "slides" tipo PowerPoint**: ao escolher tutorial, o compositor vira um construtor de slides — você adiciona quantos slides quiser, cada um com **imagem própria** (upload independente, até 25 MB) e **texto próprio**, sem precisar ter o mesmo tamanho que a imagem de capa do feed.
   - Upload por clique ou arrastar (imagem/vídeo de capa, até 25 MB por arquivo), com preview.
     Para vídeo, a miniatura é um **frame real do começo** — nunca o frame preto inicial.
@@ -323,7 +336,15 @@ publicar o `beam-community/` como está.
 
 ### Boards
 
-Geral · Fotografia · Vídeo · Tutoriais · Áudio
+Geral · Fotografia · Vídeo · Tutoriais · Áudio · Ciências · Games
+
+Cada board tem cor e ícone próprios (bússola, câmera, filmadora, caderno,
+microfone, béquer e controle). Para criar outro, basta acrescentar uma entrada
+em `BOARDS` (`assets/data.js`) e o símbolo correspondente no sprite SVG de
+`index.html` e `post.html` (`i-board-<id>`).
+
+> Ao renomear ou remover um board, posts locais que apontam para o id
+> antigo são descartados na carga (posts do próprio usuário são preservados).
 
 ## Modelo de dados
 
