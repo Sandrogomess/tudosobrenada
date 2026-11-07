@@ -1087,14 +1087,16 @@
     renderFeed();
   });
 
-  /* O compositor publicou ou salvou um post: o feed se atualiza e o
-     post recem-publicado aparece na sua propria pagina. */
+  /* O compositor publicou ou salvou um post: o feed se atualiza.
+     Post novo abre a pagina dele; edicao deixa a tela como esta
+     (voce continua no feed, sem ser jogado para dentro do post). */
   window.addEventListener('beam:post-saved', function (event) {
     var post = event.detail && event.detail.post;
+    var edited = !!(event.detail && event.detail.edited);
     renderYouNav();
     renderBoards();
     renderFeed();
-    if (post) setTimeout(function () { openPost(post.id); }, 350);
+    if (post && !edited) setTimeout(function () { openPost(post.id); }, 350);
   });
 
   /* Ao rolar, novos cards de vídeo entram na tela: confere se algum

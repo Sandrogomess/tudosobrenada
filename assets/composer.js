@@ -628,8 +628,12 @@
     el.composer.close();
     state.editingPostId = null;
 
-    /* A pagina que abriu o compositor redesenha o que precisa. */
-    global.dispatchEvent(new CustomEvent('beam:post-saved', { detail: { post: post } }));
+    /* A pagina que abriu o compositor redesenha o que precisa.
+       "edited" diz se foi edicao (a tela fica onde esta) ou post novo
+       (o feed abre a pagina do post recem-publicado). */
+    global.dispatchEvent(new CustomEvent('beam:post-saved', {
+      detail: { post: post, edited: !!original }
+    }));
   }
 
   /* ---------------- eventos ---------------- */
