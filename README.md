@@ -316,6 +316,9 @@ publicar o `beam-community/` como está.
     sem voltar para a tela inicial. O diálogo é montado por JS (fonte única
     para as duas páginas).
   - No editor, a **mídia de capa aparece logo abaixo do título**.
+  - **Publicar** um post novo abre a página dele; **editar** um post existente
+    deixa você onde está (no feed continua no feed, na página do post continua
+    na página do post).
   - **Tutorial com "slides" tipo PowerPoint**: ao escolher tutorial, o compositor vira um construtor de slides — você adiciona quantos slides quiser, cada um com **imagem própria** (upload independente, até 25 MB) e **texto próprio**, sem precisar ter o mesmo tamanho que a imagem de capa do feed.
   - Upload por clique ou arrastar (imagem/vídeo de capa, até 25 MB por arquivo), com preview.
     Para vídeo, a miniatura é um **frame real do começo** — nunca o frame preto inicial.
