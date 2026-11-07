@@ -25,8 +25,9 @@ beam-community/
 │  ├─ app.js           # página inicial: feed, filtros, navegação
 │  └─ post.js          # página do post: votos, comentários, respostas
 ├─ tools/
-│  ├─ mock-supabase.js # Supabase de mentira (testes sem conta)
-│  └─ test-zoom.js     # teste do zoom digital e do visualizador (roda na página)
+│  ├─ mock-supabase.js       # Supabase de mentira (testes sem conta)
+│  ├─ test-zoom.js           # teste do zoom digital e do visualizador
+│  └─ test-slide-preview.html# teste da previa da imagem do slide
 └─ demo/
    ├─ preview-desktop.html   # abre o site dentro de um iframe de 1440px
    └─ ensaio-liso.svg       # arquivo de imagem usado nos testes de upload
@@ -56,6 +57,13 @@ fetch('/tools/test-zoom.js').then(r => r.text()).then(t => (0, eval)(t));
 console.log(window.__ZOOMTEST);
 // { ok: true, testes: [ { nome, ok, detalhe }, … ] }
 ```
+
+### Teste da prévia do slide
+
+Abra `tools/test-slide-preview.html` no navegador: ele gera imagens em vários
+formatos (ultrawide, 16:9, quadrado, retrato…) e confere que a prévia do slide
+**nunca** tem tarja escura, nunca corta a foto e usa a largura toda quando a
+altura cabe no limite.
 
 ## Banco compartilhado (Supabase)
 
@@ -334,6 +342,9 @@ publicar o `beam-community/` como está.
     deixa você onde está (no feed continua no feed, na página do post continua
     na página do post).
   - **Tutorial com "slides" tipo PowerPoint**: ao escolher tutorial, o compositor vira um construtor de slides — você adiciona quantos slides quiser, cada um com **imagem própria** (upload independente, até 25 MB) e **texto próprio**, sem precisar ter o mesmo tamanho que a imagem de capa do feed.
+    - A prévia da imagem do slide **acompanha a proporção real** da foto: a altura
+      cresce só até as tarjas escuras sumirem (nada de tarja, nada de imagem
+      esticada ou cortada).
   - Upload por clique ou arrastar (imagem/vídeo de capa, até 25 MB por arquivo), com preview.
     Para vídeo, a miniatura é um **frame real do começo** — nunca o frame preto inicial.
   - Link de material de apoio opcional, com rótulo detectado automaticamente.

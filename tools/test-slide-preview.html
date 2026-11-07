@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Teste: previa da imagem do slide</title>
+<link rel="stylesheet" href="../assets/styles.css">
+<style>
+  /* Reproduz o tamanho do cartao de slide do compositor. */
+  body { padding: 24px; }
+  .caso { width: 520px; margin-bottom: 24px; border: 1px dashed #666; }
+  .caso--estreito { width: 240px; }
+</style>
+</head>
+<body>
+<h1>Previa da imagem do slide</h1>
+<div id="casos"></div>
+
+<script>
+/* Gera imagens com proporcoes varias e mede a previa de cada uma.
+   O que interessa: a caixa da previa tem que ter EXATAMENTE o tamanho
+   do desenho da imagem (nada de tarja escura nas laterais). */
+var formatos = [
+  { nome: 'ultrawide 4:1', w: 2000, h: 500 },
+  { nome: 'panorama 21:9', w: 2100, h: 900 },
+  { nome: '16:9', w: 1920, h: 1080 },
+  { nome: '4:3', w: 1600, h: 1200 },
+  { nome: 'quadrado 1:1', w: 900, h: 900 },
+  { nome: 'retrato 2:3', w: 800, h: 1200 },
+  { nome: 'bem alta 1:3', w: 400, h: 1200 }
+];
+
+function gerar(w, h) {
+  var c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  var g = c.getContext('2d');
+  g.fillStyle = '#3b7ea1'; g.fillRect(0, 0, w, h);
+  g.fillStyle = '#ffb23f';
+  g.fillRect(w * 0.1, h * 0.1, w * 0.8, h * 0.8);
+  return c.toDataURL('image/png');
+}
+
+var raiz = document.getElementById('casos');
+formatos.forEach(function (f, i) {
+  var div = document.createElement('div');
+  div.className = 'caso' + (i === formatos.length - 1 ? ' caso--estreito' : '');
+  div.innerHTML = '<div class="slide-card"><div class="slide__preview">' +
+    '<img alt="Imagem do slide" src="' + gerar(f.w, f.h) + '"></div></div>';
+  raiz.appendChild(div);
+});
+
+window.addEventListener('load', function () {
+  setTimeout(function () {
+    var out = { ok: true, casos: [] };
+    var caixas = document.querySelectorAll('.slide__preview');
+    for (var i = 0; i < caixas.length; i++) {
+      var box = caixas[i];
+      var img = box.querySelector('img');
+      var b = box.getBoundingClientRect();
+      var ib = img.getBoundingClientRect();
+      var estilo = getComputedStyle(img);
+      /* O conteudo desenhado da imagem (depois do object-fit). */
+      var escala = Math.min(ib.width / img.naturalWidth, ib.height / img.naturalHeight);
+      var desenhoW = img.naturalWidth * escala;
+      var desenhoH = img.naturalHeight * escala;
+      /* A tarja escura: o desenho menor que a caixa. */
+      var tarjaX = ib.width - desenhoW;
+      var tarjaY = ib.height - desenhoH;
+      var caso = {
+        nome: formatos[i].nome,
+        natural: img.naturalWidth + 'x' + img.naturalHeight,
+        caixa: Math.round(b.width) + 'x' + Math.round(b.height),
+        imagem: Math.round(ib.width) + 'x' + Math.round(ib.height),
+        tarjaLateral: Math.round(tarjaX * 10) / 10,
+        tarjaVertical: Math.round(tarjaY * 10) / 10,
+        ok: tarjaX < 1 && tarjaY < 1 && b.width <= 301 && b.height <= 221
+      };
+      /* Imagem deitada que cabe no limite de altura: a altura tem que
+         crescer usando a largura toda (encolher a largura nao serve). */
+      var alturaNecessaria = 300 * formatos[i].h / formatos[i].w;
+      if (formatos[i].w >= formatos[i].h && alturaNecessaria <= 220) {
+        caso.larguraTotal = Math.round(b.width) >= 298;
+        if (!caso.larguraTotal) caso.ok = false;
+      } else {
+        caso.larguraTotal = null;
+      }
+      if (!caso.ok) out.ok = false;
+      out.casos.push(caso);
+    }
+    window.__SLIDETEST = out;
+  }, 300);
+});
+</script>
+</body>
+</html>
