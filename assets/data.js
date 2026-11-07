@@ -511,51 +511,378 @@
       note.textContent = 'Mídia indisponível';
       parent.appendChild(note);
     },
-    /* zoom 2x seguindo o mouse nas paginas de post (capa e slides) */
+    /* Zoom 2x digital seguindo o mouse nas paginas de post (capa e slides).
+
+       O truque para a qualidade ficar igual a de um visualizador de fotos:
+       a imagem NAO e escalada por `transform`. Escalando o desenho que
+       ja estava na tela, o navegador sobe o raster reduzido e o resultado
+       sai borrado (e pior a cada zoom). Aqui a imagem e redesenhada no
+       tamanho final, sempre a partir do arquivo original, e o recorte vai
+       sendo movido com o mouse. Cada pixel da foto nativa aparece na
+       tela - e um zoom digital de verdade, como o do app de fotos.
+
+       Detalhe: o arquivo nativo e o que o site ja serve (o upload nao
+       rebaixa nem recomprime a imagem), entao o zoom mostra a imagem
+       inteira, na resolucao em que ela foi publicada. */
     zoom: function (root) {
       var scope = root || document;
       var hosts = scope.querySelectorAll('.postpage__media, .postpage .slide__preview');
+      var ZOOM = 2; /* quantas vezes a imagem cresce */
+
       for (var i = 0; i < hosts.length; i++) {
-        var host = hosts[i];
-        if (host.getAttribute('data-zoom-ready') === '1') continue;
-        if (!host.querySelector('img')) continue;
-        host.setAttribute('data-zoom-ready', '1');
-        host.classList.add('zoom-host');
-        host.addEventListener('mousemove', function (event) {
-          var target = event.currentTarget.querySelector('img');
+        (function (host) {
+          if (host.getAttribute('data-zoom-ready') === '1') return;
+          var target = host.querySelector('img');
           if (!target) return;
-          var rect = target.getBoundingClientRect();
-          if (!rect.width || !rect.height) return;
-          var fit = window.getComputedStyle(target).objectFit || 'fill';
-          var ox = 0;
-          var oy = 0;
-          if (fit === 'contain' || fit === 'cover') {
+          host.setAttribute('data-zoom-ready', '1');
+          host.classList.add('zoom-host');
+
+          /* Estado do zoom, medido com a imagem ainda no fluxo normal.
+             Nada e medido durante o zoom: medir ali usaria a caixa ja
+             ampliada e o zoom se acumularia a cada movimento do mouse. */
+          var base = null;
+
+          function measure() {
             var nw = target.naturalWidth;
             var nh = target.naturalHeight;
-            if (nw && nh) {
-              var k = fit === 'contain'
-                ? Math.min(rect.width / nw, rect.height / nh)
-                : Math.max(rect.width / nw, rect.height / nh);
-              var cw = nw * k;
-              var ch = nh * k;
-              ox = (rect.width - cw) / 2;
-              oy = (rect.height - ch) / 2;
+            if (!nw || !nh) return null;
+            var hostBox = host.getBoundingClientRect();
+            var imgBox = target.getBoundingClientRect();
+            if (!hostBox.width || !hostBox.height || !imgBox.width || !imgBox.height) return null;
+
+            /* Como a imagem aparece dentro da sua caixa (object-fit). */
+            var fit = window.getComputedStyle(target).objectFit || 'fill';
+            var ox = 0, oy = 0;
+            var k = imgBox.width / nw;
+            if (fit === 'contain' || fit === 'cover') {
+              k = fit === 'contain'
+                ? Math.min(imgBox.width / nw, imgBox.height / nh)
+                : Math.max(imgBox.width / nw, imgBox.height / nh);
+              ox = (imgBox.width - nw * k) / 2;
+              oy = (imgBox.height - nh * k) / 2;
             }
+
+            return {
+              nw: nw, nh: nh,
+              /* Onde a imagem fica dentro do host (caixa de conteudo). */
+              left: imgBox.left - (hostBox.left + host.clientLeft),
+              top: imgBox.top - (hostBox.top + host.clientTop),
+              ox: ox, oy: oy, k: k || 1,
+              /* Area visivel do host (o recorte). */
+              viewW: host.clientWidth, viewH: host.clientHeight,
+              /* Altura que o host precisa segurar: quando a imagem sai
+                 do fluxo (vira absoluta) a caixa colapsaria para 1px e
+                 o zoom iria para fora da tela. */
+              hostH: hostBox.height
+            };
           }
-          var cx = event.clientX - rect.left;
-          var cy = event.clientY - rect.top;
-          cx = Math.max(ox, Math.min(ox + (rect.width - 2 * ox), cx));
-          cy = Math.max(oy, Math.min(oy + (rect.height - 2 * oy), cy));
-          target.style.transformOrigin = ((cx / rect.width) * 100) + '% ' + ((cy / rect.height) * 100) + '%';
-          target.style.transform = 'scale(2)';
-        });
-        host.addEventListener('mouseleave', function (event) {
-          var target = event.currentTarget.querySelector('img');
-          if (!target) return;
-          target.style.transformOrigin = 'center center';
-          target.style.transform = 'scale(1)';
-        });
+
+          function reset() {
+            host.classList.remove('is-zoomed');
+            target.style.width = '';
+            target.style.height = '';
+            target.style.left = '';
+            target.style.top = '';
+            target.style.transform = '';
+            host.style.height = '';
+            base = null;
+          }
+
+          function apply(event) {
+            if (!base) base = measure();
+            if (!base) return;
+            var hostBox = host.getBoundingClientRect();
+            if (!hostBox.width || !hostBox.height) return;
+
+            /* O mouse, em coordenadas da area visivel do host. */
+            var mx = event.clientX - (hostBox.left + host.clientLeft);
+            var my = event.clientY - (hostBox.top + host.clientTop);
+
+            /* O ponto da imagem original que esta sob o mouse. */
+            var ix = (mx - base.left - base.ox) / base.k;
+            var iy = (my - base.top - base.oy) / base.k;
+
+            /* Tamanho final: a imagem e redesenhada na resolucao
+               nativa, nunca a partir do desenho reduzido da tela. */
+            var s = base.k * ZOOM;
+            var tw = base.nw * s;
+            var th = base.nh * s;
+
+            /* Deslocamento que mantem o mesmo ponto sob o mouse. */
+            var tx = (mx - base.left) - ix * s;
+            var ty = (my - base.top) - iy * s;
+
+            /* A imagem ampliada nunca deixa buraco na area visivel. */
+            if (tw <= base.viewW) tx = (base.viewW - tw) / 2 - base.left;
+            else tx = Math.max(base.viewW - tw - base.left, Math.min(-base.left, tx));
+            if (th <= base.viewH) ty = (base.viewH - th) / 2 - base.top;
+            else ty = Math.max(base.viewH - th - base.top, Math.min(-base.top, ty));
+
+            /* Antes de tirar a imagem do fluxo, o host ganha a altura
+               que tinha: e o que segura o recorte na tela. */
+            if (!host.style.height) host.style.height = base.hostH + 'px';
+            host.classList.add('is-zoomed');
+            target.style.width = tw + 'px';
+            target.style.height = th + 'px';
+            target.style.left = base.left + 'px';
+            target.style.top = base.top + 'px';
+            target.style.transform = 'translate(' + tx + 'px,' + ty + 'px)';
+          }
+
+          host.addEventListener('mouseenter', function () {
+            reset();
+            base = measure();
+          });
+          host.addEventListener('mousemove', apply);
+          host.addEventListener('mouseleave', reset);
+          /* A janela mudou de tamanho: a medida antiga nao vale mais. */
+          window.addEventListener('resize', reset);
+
+          /* Clique abre o visualizador: a imagem em tamanho nativo,
+             com o arquivo original a um clique de distancia. */
+          host.addEventListener('click', function (event) {
+            if (event.target.closest('a, button')) return;
+            util.lightbox(target.currentSrc || target.src, target.alt || '');
+          });
+        })(hosts[i]);
       }
+    },
+
+    /* Visualizador de imagem (lightbox): mostra o arquivo em tamanho
+       NATIVO, com zoom de verdade (ajustar / 1:1 / 2x), roda do mouse
+       trocando de modo e arrasto para mover a imagem - como o app de
+       fotos do Windows. */
+    lightbox: function (src, name) {
+      if (!src) return;
+      var box = document.getElementById('lightbox');
+      if (!box) {
+        box = document.createElement('div');
+        box.className = 'lightbox';
+        box.id = 'lightbox';
+        box.setAttribute('role', 'dialog');
+        box.setAttribute('aria-label', 'Imagem em tamanho nativo');
+        box.innerHTML =
+          '<div class="lightbox__backdrop" data-lightbox-close></div>' +
+          '<div class="lightbox__stage" data-lightbox-stage>' +
+            '<img class="lightbox__img" alt="" draggable="false">' +
+          '</div>' +
+          '<div class="lightbox__bar">' +
+            '<span class="lightbox__name"></span>' +
+            '<div class="lightbox__acts">' +
+              '<button type="button" class="btn btn--ghost" data-lightbox-zoom="fit">Ajustar</button>' +
+              '<button type="button" class="btn btn--ghost" data-lightbox-zoom="1">1:1</button>' +
+              '<button type="button" class="btn btn--ghost" data-lightbox-zoom="2">2x</button>' +
+              '<a class="btn btn--ghost" data-lightbox-original target="_blank" rel="noopener">Abrir original</a>' +
+              '<button type="button" class="icon-btn" data-lightbox-close aria-label="Fechar">' +
+                '<svg class="icon"><use href="#i-close"/></svg>' +
+              '</button>' +
+            '</div>' +
+          '</div>';
+        document.body.appendChild(box);
+
+        var img = box.querySelector('.lightbox__img');
+        var stage = box.querySelector('[data-lightbox-stage]');
+        var drag = null;      /* arrasto em andamento */
+        var arrastou = false; /* o clique anterior veio de um arrasto */
+        var pan = { x: 0, y: 0 }; /* deslocamento da imagem dentro do palco */
+
+        function aplicarTransform() {
+          img.style.transform = 'translate(' + pan.x + 'px,' + pan.y + 'px)';
+        }
+
+        /* A imagem nunca some do palco: quando ela e maior que a tela
+           as bordas ficam travadas na borda da tela; quando e menor,
+           ela fica no centro. */
+        function prender() {
+          /* O retangulo precisa refletir o deslocamento ATUAL. Se ele
+             for lido antes do transform ser aplicado, a posicao da
+             imagem e calculada misturando o deslocamento velho com o
+             novo, o limite de tela "pula" a cada movimento e a imagem
+             vibra nas bordas. */
+          aplicarTransform();
+          var r = img.getBoundingClientRect();
+          var s = stage.getBoundingClientRect();
+          /* Posicao da imagem sem o deslocamento. */
+          var left = r.left - pan.x;
+          var top = r.top - pan.y;
+          if (r.width > s.width) {
+            pan.x = Math.max(s.right - left - r.width, Math.min(s.left - left, pan.x));
+          } else {
+            pan.x = (s.left + s.width / 2) - (left + r.width / 2);
+          }
+          if (r.height > s.height) {
+            pan.y = Math.max(s.bottom - top - r.height, Math.min(s.top - top, pan.y));
+          } else {
+            pan.y = (s.top + s.height / 2) - (top + r.height / 2);
+          }
+          aplicarTransform();
+        }
+
+        /* So da para arrastar quando a imagem passou da tela. */
+        function podeMover() {
+          var r = img.getBoundingClientRect();
+          var s = stage.getBoundingClientRect();
+          return r.width > s.width + 1 || r.height > s.height + 1;
+        }
+
+        function atualizarCursor() {
+          stage.classList.toggle('is-pannable', podeMover());
+          stage.classList.toggle('is-dragging', !!drag);
+        }
+
+        /* Troca o zoom. Com `anchor` (a posicao do ponteiro), o ponto da
+           imagem que estava sob o cursor continua sob o cursor depois
+           do zoom - como no app de fotos do Windows. */
+        function setZoom(mode, anchor) {
+          var nw = img.naturalWidth || 0;
+          var nh = img.naturalHeight || 0;
+
+          var antes = img.getBoundingClientRect();
+          var scale0 = nw ? antes.width / nw : 1;
+          /* O ponto da imagem original que esta sob o ponteiro. */
+          var nx = 0, ny = 0;
+          if (anchor && nw) {
+            nx = (anchor.x - antes.left) / scale0;
+            ny = (anchor.y - antes.top) / scale0;
+          }
+
+          box.setAttribute('data-zoom', mode);
+          if (mode === 'fit') {
+            img.style.width = '';
+            img.style.height = '';
+          } else if (nw) {
+            var f = mode === '1' ? 1 : 2;
+            img.style.width = (nw * f) + 'px';
+            img.style.height = (nh * f) + 'px';
+          }
+
+          /* A leitura do rect forca o layout novo: a escala e a do zoom
+             que acabou de ser aplicado. */
+          var depois = img.getBoundingClientRect();
+          var scale1 = nw ? depois.width / nw : 1;
+
+          if (mode === 'fit') {
+            /* Ajustar volta para o centro. */
+            pan.x = 0;
+            pan.y = 0;
+          } else if (anchor && nw) {
+            /* Posicao da imagem sem o deslocamento, no layout novo. */
+            var left = depois.left - pan.x;
+            var top = depois.top - pan.y;
+            pan.x = anchor.x - left - nx * scale1;
+            pan.y = anchor.y - top - ny * scale1;
+          } else {
+            pan.x = 0;
+            pan.y = 0;
+          }
+          aplicarTransform();
+
+          box.querySelectorAll('[data-lightbox-zoom]').forEach(function (btn) {
+            btn.classList.toggle('is-on', btn.getAttribute('data-lightbox-zoom') === mode);
+          });
+          atualizarCursor();
+        }
+
+        function close() {
+          box.classList.remove('is-open');
+          document.body.classList.remove('lightbox-open');
+          drag = null;
+          pan.x = 0;
+          pan.y = 0;
+          aplicarTransform();
+          atualizarCursor();
+        }
+
+        box.addEventListener('click', function (event) {
+          if (event.target.closest('[data-lightbox-close]')) { close(); return; }
+          var zoomBtn = event.target.closest('[data-lightbox-zoom]');
+          if (zoomBtn) setZoom(zoomBtn.getAttribute('data-lightbox-zoom'));
+        });
+
+        /* Clique no fundo (fora da imagem) fecha - mas nao depois de
+           um arrasto, senao a imagem some quando a pessoa move. */
+        stage.addEventListener('click', function (event) {
+          if (arrastou) { arrastou = false; return; }
+          if (event.target === stage) close();
+        });
+
+        document.addEventListener('keydown', function (event) {
+          if (event.key === 'Escape' && box.classList.contains('is-open')) close();
+        });
+
+        /* A roda do mouse passa pelos modos: ajustar -> 1:1 -> 2x, e o
+           zoom acontece no ponto do ponteiro (nao no canto da imagem).
+           Sem Ctrl, porque aqui a roda controla o zoom (e nao a rolagem
+           da pagina). */
+        stage.addEventListener('wheel', function (event) {
+          if (!box.classList.contains('is-open')) return;
+          event.preventDefault();
+          var modes = ['fit', '1', '2'];
+          var atual = modes.indexOf(box.getAttribute('data-zoom') || 'fit');
+          if (atual < 0) atual = 0;
+          var dir = event.deltaY < 0 ? 1 : -1;
+          var novo = Math.max(0, Math.min(modes.length - 1, atual + dir));
+          if (novo === atual) return;
+          setZoom(modes[novo], { x: event.clientX, y: event.clientY });
+        }, { passive: false });
+
+        /* Arrastar a imagem com o botao do mouse (como o app de fotos
+           do Windows): o ponteiro "puxa" a imagem. */
+        stage.addEventListener('mousedown', function (event) {
+          if (event.button !== 0) return;
+          if (!podeMover()) return;
+          drag = {
+            x: event.clientX, y: event.clientY,
+            px: pan.x, py: pan.y
+          };
+          arrastou = false;
+          stage.classList.add('is-dragging');
+          event.preventDefault();
+        });
+
+        window.addEventListener('mousemove', function (event) {
+          if (!drag) return;
+          var dx = event.clientX - drag.x;
+          var dy = event.clientY - drag.y;
+          if (Math.abs(dx) > 3 || Math.abs(dy) > 3) arrastou = true;
+          pan.x = drag.px + dx;
+          pan.y = drag.py + dy;
+          prender();
+        });
+
+        window.addEventListener('mouseup', function () {
+          if (!drag) return;
+          drag = null;
+          stage.classList.remove('is-dragging');
+        });
+
+        /* A imagem que ainda estava carregando: reaplica o modo. */
+        img.addEventListener('load', function () {
+          setZoom(box.getAttribute('data-zoom') || 'fit');
+        });
+
+        window.addEventListener('resize', function () {
+          pan.x = 0;
+          pan.y = 0;
+          aplicarTransform();
+          atualizarCursor();
+        });
+
+        box._setZoom = setZoom;
+      }
+
+      var img = box.querySelector('.lightbox__img');
+      var link = box.querySelector('[data-lightbox-original]');
+      var label = box.querySelector('.lightbox__name');
+      img.src = src;
+      img.alt = name || '';
+      link.href = src;
+      label.textContent = name || '';
+      box.classList.add('is-open');
+      document.body.classList.add('lightbox-open');
+      /* O "ajustar" e o ponto de partida; o 1:1 fica a um clique
+         (ou a uma volta da roda do mouse). */
+      box._setZoom('fit');
     }
   };
 

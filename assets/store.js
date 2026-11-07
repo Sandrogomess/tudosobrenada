@@ -27,10 +27,13 @@
          O "url" é a endereço público no Storage (quando o banco está ligado)
          ou uma data URL (quando o navegador guardou o arquivo localmente). */
       media: {},
-      /* Totais de votos vindos do banco compartilhado. Null = site local,
-         sem contagem coletiva. */
-      voteTotals: null,
-      commentVoteTotals: null,
+      /* Linhas de voto vindas do banco compartilhado, como vieram.
+         Null = site local, sem contagem coletiva.
+         A divisão entre "meu voto" e "voto dos outros" é feita na hora
+         (ver score): guardar a soma pronta envelhece quando a pessoa
+         troca de perfil ou vira visitante. */
+      voteRows: null,
+      commentVoteRows: null,
       mediaFallback: {},
       removedPosts: {},
       /* Perfis apagados (ids): impedem que uma aba antiga recrie o perfil. */
@@ -416,35 +419,33 @@
     });
 
     /* --- votos --- */
-    /* `totals` traz a soma dos votos dos OUTROS (o meu entra separado,
-       em `mine`), assim a pontuação muda na hora quando eu voto e o
-       voto não é contado duas vezes. */
+    /* As linhas cruas ficam guardadas: quem é "meu" depende do perfil que
+       está em uso agora, e isso pode mudar a qualquer momento (trocar de
+       perfil, sair, entrar). Separar os votos em "meus" e "dos outros"
+       na hora da leitura evita a contagem dobrada. */
     var me = state.settings.currentProfileId;
-    var totals = {};
+    state.voteRows = data.votes || [];
+    state.commentVoteRows = data.commentVotes || [];
+
     var mine = {};
-    (data.votes || []).forEach(function (v) {
-      if (!v || !v.post_id) return;
-      if (me && v.voter === me) {
-        mine[v.post_id] = v.value;
-        return;
-      }
-      totals[v.post_id] = (totals[v.post_id] || 0) + (v.value || 0);
+    state.voteRows.forEach(function (v) {
+      if (!v || !v.post_id || !me || v.voter !== me) return;
+      mine[v.post_id] = v.value;
     });
-    state.voteTotals = totals;
     if (!state.votes) state.votes = {};
+    /* Sem perfil não há voto "meu": o que sobrou no navegador é de
+       outra pessoa e não pode ser contado duas vezes. */
+    if (!me) {
+      state.votes = {};
+      state.commentVotes = {};
+    }
     Object.keys(mine).forEach(function (id) { state.votes[id] = mine[id]; });
 
-    var cTotals = {};
     var cMine = {};
-    (data.commentVotes || []).forEach(function (v) {
-      if (!v || !v.comment_id) return;
-      if (me && v.voter === me) {
-        cMine[v.comment_id] = v.value;
-        return;
-      }
-      cTotals[v.comment_id] = (cTotals[v.comment_id] || 0) + (v.value || 0);
+    state.commentVoteRows.forEach(function (v) {
+      if (!v || !v.comment_id || !me || v.voter !== me) return;
+      cMine[v.comment_id] = v.value;
     });
-    state.commentVoteTotals = cTotals;
     if (!state.commentVotes) state.commentVotes = {};
     Object.keys(cMine).forEach(function (id) { state.commentVotes[id] = cMine[id]; });
 
@@ -711,6 +712,13 @@
         state.settings.currentProfileId = null;
         changed = true;
       }
+      /* Sem perfil ativo não existe voto "meu": o mapa local é zerado,
+         senão o visitante veria o voto do perfil antigo somado por cima
+         da pontuação do banco. */
+      if (!state.settings.currentProfileId) {
+        if (Object.keys(state.votes || {}).length) { state.votes = {}; changed = true; }
+        if (Object.keys(state.commentVotes || {}).length) { state.commentVotes = {}; changed = true; }
+      }
       /* Perfis favoritos: some com quem não existe mais (perfil apagado
          ou membro de exemplo que ficou sem post). */
       var favBefore = (state.favoriteProfiles || []).length;
@@ -847,11 +855,19 @@
     switchProfile: function (id) {
       if (id === null) {
         state.settings.currentProfileId = null;
+        /* Os votos que sobraram no navegador eram do perfil que saiu:
+           no modo visitante eles nao podem ser contados de novo. */
+        state.votes = {};
+        state.commentVotes = {};
         save();
         return state;
       }
       if (!(state.profiles || []).some(function (a) { return a.id === id; })) return state;
       state.settings.currentProfileId = id;
+      /* Trocar de perfil limpa os votos "meus": o novo perfil tem os
+         dele, que chegam no proximo sync do banco. */
+      state.votes = {};
+      state.commentVotes = {};
       save();
       return state;
     },
@@ -959,7 +975,13 @@
         });
       }
       /* Sem perfil ativo a pessoa volta a ser visitante. */
-      if (state.settings.currentProfileId === id) state.settings.currentProfileId = null;
+      if (state.settings.currentProfileId === id) {
+        state.settings.currentProfileId = null;
+        /* Os votos do perfil apagado saem com ele: no modo visitante a
+           pontuacao e so a soma do banco. */
+        state.votes = {};
+        state.commentVotes = {};
+      }
       save();
       mediaToDrop.forEach(function (mediaId) { idbDelete(mediaId).catch(function () { }); });
       /* Apaga também no banco compartilhado: os posts somem para todo mundo. */
@@ -1230,26 +1252,62 @@
        O voto da pessoa que está olhando entra por conta própria (vai
        para o banco logo depois), para a pontuação mudar na hora.
        O `post.votes` antigo NÃO entra: ele contava o "+1" automático
-       que os posts velhos nasceram com. */
+       que os posts velhos nasceram com.
+
+       A conta é feita na hora, com o perfil que está em uso AGORA:
+       - logado: o voto dos outros + o meu voto;
+       - visitante: só a soma de todos (não existe "meu voto"), e o que
+         sobrou no navegador do perfil anterior é ignorado — senão o
+         visitante veria um ponto a mais. */
     score: function (post) {
       if (!post) return 0;
-      var meu = (state.votes || {})[post.id] || 0;
       var db = global.Beam.db;
-      if (state.voteTotals && db && db.enabled()) {
-        return (state.voteTotals[post.id] || 0) + meu;
+      var temBanco = state.voteRows && db && db.enabled();
+      var me = state.settings.currentProfileId;
+
+      if (!temBanco) {
+        /* Site local: só vale o voto guardado no navegador. */
+        return me ? ((state.votes || {})[post.id] || 0) : 0;
       }
-      return meu;
+
+      var dosOutros = 0;
+      var meuNoBanco = 0;
+      (state.voteRows || []).forEach(function (v) {
+        if (!v || v.post_id !== post.id) return;
+        if (me && v.voter === me) { meuNoBanco = v.value || 0; return; }
+        dosOutros += (v.value || 0);
+      });
+
+      /* O voto local entra junto para a pontuação mudar na hora. Se a
+         linha já está no banco, o valor local é o mesmo e não conta
+         duas vezes. */
+      var local = me ? ((state.votes || {})[post.id] || 0) : 0;
+      if (local && local !== meuNoBanco) return dosOutros + local;
+      return dosOutros + meuNoBanco;
     },
 
     /* Pontuação de um comentário (mesma regra do post). */
     commentScore: function (comment) {
       if (!comment) return 0;
-      var meu = (state.commentVotes || {})[comment.id] || 0;
       var db = global.Beam.db;
-      if (state.commentVoteTotals && db && db.enabled()) {
-        return (state.commentVoteTotals[comment.id] || 0) + meu;
+      var temBanco = state.commentVoteRows && db && db.enabled();
+      var me = state.settings.currentProfileId;
+
+      if (!temBanco) {
+        return me ? ((state.commentVotes || {})[comment.id] || 0) : 0;
       }
-      return meu;
+
+      var dosOutros = 0;
+      var meuNoBanco = 0;
+      (state.commentVoteRows || []).forEach(function (v) {
+        if (!v || v.comment_id !== comment.id) return;
+        if (me && v.voter === me) { meuNoBanco = v.value || 0; return; }
+        dosOutros += (v.value || 0);
+      });
+
+      var local = me ? ((state.commentVotes || {})[comment.id] || 0) : 0;
+      if (local && local !== meuNoBanco) return dosOutros + local;
+      return dosOutros + meuNoBanco;
     }
   };
 

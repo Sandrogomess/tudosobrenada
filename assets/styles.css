@@ -2057,10 +2057,117 @@ a.by__name:hover { text-decoration: underline; }
 .zoom-host {
   overflow: hidden;
   cursor: zoom-in;
+  position: relative;
 }
 .zoom-host img {
-  transform-origin: center center;
+  transform-origin: 0 0;
   will-change: transform;
+}
+/* Durante o zoom a imagem e redesenhada no tamanho final (em pixels da
+   imagem original) e recortada pela caixa: e um zoom digital de verdade,
+   sem passar pelo desenho reduzido da tela. */
+.zoom-host.is-zoomed img {
+  position: absolute;
+  max-width: none;
+  max-height: none;
+  transition: none;
+}
+
+/* ---------------- visualizador de imagem nativa ---------------- */
+
+.lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: none;
+  color: var(--paper);
+}
+.lightbox.is-open { display: block; }
+.lightbox__backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(3, 12, 13, 0.94);
+  backdrop-filter: blur(4px);
+}
+.lightbox__stage {
+  position: absolute;
+  inset: 0 0 64px 0;
+  /* Sem barra de rolagem: quem move a imagem e o arrasto do mouse, e o
+     zoom acontece no ponto do ponteiro. */
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  /* Arrastar a imagem nao pode selecionar o texto em volta. */
+  user-select: none;
+  -webkit-user-select: none;
+}
+.lightbox__stage img { cursor: default; }
+/* Com a imagem maior que a tela, ela pode ser puxada com o mouse. */
+.lightbox__stage.is-pannable { cursor: grab; }
+.lightbox__stage.is-pannable img { cursor: grab; }
+.lightbox__stage.is-dragging,
+.lightbox__stage.is-dragging img { cursor: grabbing; }
+.lightbox__img {
+  display: block;
+  max-width: 100%;
+  max-height: 100%;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  border-radius: var(--radius-sm);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
+  /* O movimento da imagem e feito por transform (e nao por rolagem),
+     para o zoom poder ser ancorado no ponteiro. */
+  will-change: transform;
+  /* No 1:1 e no 2x a imagem vale o tamanho do pixel: nada de suavizar
+     demais, que e o que deixa o texto da imagem parecendo borrado. */
+  image-rendering: auto;
+}
+.lightbox[data-zoom="1"] .lightbox__img,
+.lightbox[data-zoom="2"] .lightbox__img {
+  max-width: none;
+  max-height: none;
+  border-radius: 0;
+}
+.lightbox__bar {
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  height: 64px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 16px;
+  background: rgba(8, 22, 23, 0.92);
+  border-top: 1px solid var(--line);
+}
+.lightbox__name {
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lightbox__acts {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+}
+.lightbox__acts .btn.is-on {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #17201F;
+}
+body.lightbox-open { overflow: hidden; }
+
+@media (max-width: 640px) {
+  .lightbox__bar { height: auto; padding: 10px 12px; flex-wrap: wrap; }
+  .lightbox__stage { inset: 0 0 96px 0; }
+  .lightbox__name { width: 100%; }
 }
 .image-zoom-wrapper {
   position: relative;

@@ -25,7 +25,8 @@ beam-community/
 │  ├─ app.js           # página inicial: feed, filtros, navegação
 │  └─ post.js          # página do post: votos, comentários, respostas
 ├─ tools/
-│  └─ mock-supabase.js # Supabase de mentira (testes sem conta)
+│  ├─ mock-supabase.js # Supabase de mentira (testes sem conta)
+│  └─ test-zoom.js     # teste do zoom digital e do visualizador (roda na página)
 └─ demo/
    ├─ preview-desktop.html   # abre o site dentro de um iframe de 1440px
    └─ ensaio-liso.svg       # arquivo de imagem usado nos testes de upload
@@ -42,6 +43,19 @@ python -m http.server 8777
 No Windows dá para **dar dois cliques** em `iniciar-servidor.bat` — ele sobe o
 servidor já com `--bind 0.0.0.0` (aceita conexões da rede local) e mostra o
 endereço no console. Para desligar, feche a janela.
+
+### Teste do zoom e do visualizador
+
+`tools/test-zoom.js` roda **dentro da página** e confere o zoom digital (2× ao
+passar o mouse), o visualizador (roda do mouse entre Ajustar/1:1/2x, zoom
+ancorado no ponteiro, arrasto com o botão do mouse e ausência de vibração nas
+bordas). Abra um post com imagem e rode no console:
+
+```js
+fetch('/tools/test-zoom.js').then(r => r.text()).then(t => (0, eval)(t));
+console.log(window.__ZOOMTEST);
+// { ok: true, testes: [ { nome, ok, detalhe }, … ] }
+```
 
 ## Banco compartilhado (Supabase)
 
@@ -326,6 +340,24 @@ publicar o `beam-community/` como está.
 - **Votos** em posts e em comentários (a favor/contra).
   - Comentários são ordenados pelo placar: o mais votado sobe, o menos desce.
   - Respostas ficam aninhadas sob o comentário pai, também ordenadas por placar.
+  - A pontuação é recalculada na hora a partir das linhas de voto do banco: no
+    **modo visitante** não existe "meu voto", então ninguém vê um ponto a mais.
+- **Zoom digital nas imagens** (capa e slides da página do post).
+  - Passar o mouse sobre a imagem amplia **2×** seguindo o ponteiro.
+  - É zoom **digital**: a imagem é redesenhada no tamanho final a partir do
+    arquivo original, nunca esticando o desenho já reduzido na tela — a
+    qualidade é a mesma de um visualizador de fotos do sistema operacional.
+  - O upload **não rebaixa nem recomprime** a imagem: o site serve o arquivo
+    como ele foi enviado. Para a melhor qualidade, envie o arquivo **nativo**
+    (PNG em vez de JPEG redimensionado).
+- **Visualizador de imagem nativa** (clique na imagem).
+  - Abre a foto em tela cheia, com os botões **Ajustar / 1:1 / 2x**.
+  - A **roda do mouse** passa pelos três modos e o zoom acontece **no ponto do
+    ponteiro**: o pedaço da imagem que estava sob o cursor continua embaixo dele.
+  - **Clicar e arrastar** com o botão do mouse move a imagem (o cursor vira
+    "arrastar"); nas bordas a imagem trava no limite da tela, sem tremer.
+  - **Esc** ou clique no fundo fecha; **Abrir original** abre o arquivo puro
+    em outra aba.
 - **Salvar** post, **compartilhar** link e **excluir** os posts que você publicou.
 - **Descoberta**: busca (título, corpo, autor, tags), filtro por board, clique em tag
   (com chip removível no topo do feed) e ordenação por ranking, data ou comentários.
@@ -420,7 +452,7 @@ Estado guardado no navegador:
 
 - HTML semântico, `dialog` nativo no compositor, `aria-label` nos botões de ícone,
   `role="tab"`/`aria-selected` nas abas de ordenação.
-- Foco visível em todo elemento interativo, link "pular para o feed",
+- Foco visível em todo elemento interativo,
   `prefers-reduced-motion` respeitado.
 - Todo texto vindo do usuário passa por escape de HTML antes de ir para o DOM.
 
@@ -441,6 +473,10 @@ Estado guardado no navegador:
 - Arquivos de mídia que existam **só** no Storage de outro projeto (ou de um
   banco de teste) não são aproveitados: o site reenvia a cópia local quando
   ela ainda existe no `IndexedDB`.
+- **O zoom não inventa detalhe que não existe no arquivo.** O 2× redesenha a
+  imagem na resolução em que ela foi publicada: se o arquivo enviado já for
+  pequeno (ou estiver comprimido como JPEG), o ampliar vai parecer suave —
+  não é falha do zoom. Para a qualidade máxima, envie o arquivo nativo.
 
 ## Posts e dados
 
